@@ -1,42 +1,27 @@
-// FILE: src/routes/adminRoutes.js — Admin Dashboard routes
 const express = require("express");
 const router  = express.Router();
-const {
-  adminLogin, getAdminMe,
-  getEmployees, getEmployeeById, updateTarget,
-  getAllVisits, getAdminVisitById, getFollowUps,
-  getAnalytics, getLiveLocations,
-  getShops, getTelecallers, updateTelecaller,
-  seedAdmin,
-} = require("../controllers/adminController");
+const adminController = require("../controllers/adminController");
 const { protectAdmin } = require("../middleware/auth");
 
-// Auth
-router.post("/auth/login", adminLogin);
-router.get( "/auth/me",    protectAdmin, getAdminMe);
+router.post("/auth/login",  adminController.adminLogin);
+router.get( "/auth/me",     protectAdmin, adminController.getAdminMe);
+router.get("/seed",        adminController.seedAdmin);
 
-// Seed (run once)
-router.post("/seed", seedAdmin);
+router.get("/employees",              protectAdmin, adminController.getEmployees);
+router.get("/employees/:id",          protectAdmin, adminController.getEmployeeById);
+router.put("/employees/:id/target",   protectAdmin, adminController.updateTarget);
 
-// Employees
-router.get("/employees",          protectAdmin, getEmployees);
-router.get("/employees/:id",      protectAdmin, getEmployeeById);
-router.put("/employees/:id/target", protectAdmin, updateTarget);
+router.get("/visits",                 protectAdmin, adminController.getAllVisits);
+router.get("/visits/followups",       protectAdmin, adminController.getFollowUps);
+router.get("/visits/:id",             protectAdmin, adminController.getAdminVisitById);
 
-// Visits
-router.get("/visits",            protectAdmin, getAllVisits);
-router.get("/visits/followups",  protectAdmin, getFollowUps);
-router.get("/visits/:id",        protectAdmin, getAdminVisitById);
+router.get("/analytics",              protectAdmin, adminController.getAnalytics);
+router.get("/locations/live",         protectAdmin, adminController.getLiveLocations);
+router.get("/shops",                  protectAdmin, adminController.getShops);
 
-// Analytics + Map
-router.get("/analytics",         protectAdmin, getAnalytics);
-router.get("/locations/live",    protectAdmin, getLiveLocations);
-
-// Shops
-router.get("/shops",             protectAdmin, getShops);
-
-// Telecallers
-router.get("/telecallers",       protectAdmin, getTelecallers);
-router.put("/telecallers/:id",   protectAdmin, updateTelecaller);
+router.get("/telecallers",            protectAdmin, adminController.getTelecallers);
+router.post("/telecallers",           protectAdmin, adminController.createTelecaller);
+router.put("/telecallers/:id",        protectAdmin, adminController.updateTelecaller);
+router.delete("/telecallers/:id",     protectAdmin, adminController.deleteTelecaller);
 
 module.exports = router;

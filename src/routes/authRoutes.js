@@ -1,14 +1,13 @@
-// FILE: src/routes/authRoutes.js — Employee auth (PWA)
 const express  = require("express");
 const router   = express.Router();
-const { register, login, getMe, changePassword, uploadPhoto } = require("../controllers/authController");
-const { protect } = require("../middleware/auth");
+const authController = require("../controllers/authController");
+const { protect }    = require("../middleware/auth");
 const { uploadProfile } = require("../config/cloudinary");
 
-router.post("/register", register);
-router.post("/login",    login);
-router.get( "/me",       protect, getMe);
-router.post("/change-password", protect, changePassword);
-router.post("/upload-photo",    protect, uploadProfile.single("photo"), uploadPhoto);
+router.post("/register",      authController.register);
+router.post("/login",         authController.login);
+router.get( "/me",            protect, authController.getMe);
+router.post("/change-password", protect, authController.changePassword);
+router.post("/upload-photo",  protect, uploadProfile.single("photo"), authController.uploadPhoto);
 
 module.exports = router;

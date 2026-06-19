@@ -3,6 +3,7 @@
 // PURPOSE: Create visits, get visit history, upload photos
 
 const Visit      = require("../models/Visit");
+const Telecaller = require("../models/Telecaller");
 const { cloudinary } = require("../config/cloudinary");
 
 // ── SUBMIT VISIT (POST /api/visits) ──────────────────────────
@@ -176,6 +177,47 @@ exports.updateStatus = async (req, res) => {
     );
     if (!visit) return res.status(404).json({ message: "Visit not found" });
     res.json({ visit });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ── UPDATE FOLLOW-UP (PUT /api/visits/:id/followup) ──────────
+// Called by FollowUpPage.jsx — reschedule a follow-up date,
+// or mark a follow-up as done (closes it, optionally logs outcome note)
+exports.updateFollowUp = async (req, res) => {
+  try {
+    const { date, status, needed, note } = req.body;
+
+    const visit = await Visit.findById(req.params.id);
+    if (!visit) return res.status(404).json({ message: "Visit not found" });
+
+    // Employees can only update follow-ups on their own visits
+    if (visit.employee.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    if (date !== undefined)   visit.followUp.date   = date;
+    if (status !== undefined) visit.followUp.status = status;
+    if (needed !== undefined) visit.followUp.needed = needed;
+
+    if (note) {
+      visit.notes = visit.notes ? `${visit.notes}\n${note}` : note;
+    }
+
+    await visit.save();
+    res.json({ visit });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ── GET TELECALLERS (GET /api/visits/telecallers) ────────────
+// Called by TelecallerModal.jsx — employee picks who to assign a visit to
+exports.getTelecallers = async (req, res) => {
+  try {
+    const telecallers = await Telecaller.find({ isActive: true });
+    res.json({ telecallers });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

@@ -259,6 +259,55 @@ exports.updateTelecaller = async (req, res) => {
   }
 };
 
+exports.createTelecaller = async (req, res) => {
+  try {
+    const { name, phone, status } = req.body;
+
+    if (!name || !phone) {
+      return res.status(400).json({ message: "Name and phone are required" });
+    }
+
+    const existing = await Telecaller.findOne({ phone });
+    if (existing) {
+      return res.status(400).json({ message: "A telecaller with this phone number already exists" });
+    }
+
+    const avatar = name
+      .trim()
+      .split(/\s+/)
+      .map((w) => w[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
+
+    const telecaller = await Telecaller.create({
+      name,
+      phone,
+      avatar,
+      status: status || "available",
+    });
+
+    res.status(201).json({ telecaller });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ── DELETE TELECALLER (DELETE /api/admin/telecallers/:id) ─────
+exports.deleteTelecaller = async (req, res) => {
+  try {
+    const tc = await Telecaller.findByIdAndUpdate(
+      req.params.id,
+      { isActive: false },
+      { new: true }
+    );
+    if (!tc) return res.status(404).json({ message: "Telecaller not found" });
+    res.json({ message: "Telecaller removed", telecaller: tc });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 // ── CREATE ADMIN SEED (POST /api/admin/seed) ─────────────────
 // Run once to create the first admin account
 exports.seedAdmin = async (req, res) => {
