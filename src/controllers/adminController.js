@@ -6,6 +6,7 @@ const Visit       = require("../models/Visit");
 const Admin       = require("../models/Admin");
 const Telecaller  = require("../models/Telecaller");
 const Location    = require("../models/Location");
+const Entry       = require("../models/Entry");
 const { generateAdminToken } = require("../utils/generateToken");
 
 // ── ADMIN LOGIN (POST /api/admin/auth/login) ─────────────────
@@ -33,20 +34,30 @@ exports.getAdminMe = async (req, res) => {
 };
 
 // ── GET ALL EMPLOYEES (GET /api/admin/employees) ─────────────
+// CHANGE: now also returns weeklyDone + totalVisits per employee
+// (needed by the real Sales Team cards + Target Management page —
+// previously only todayVisits was attached, so those screens had to use dummy data)
 exports.getEmployees = async (req, res) => {
   try {
     const today = new Date(); today.setHours(0,0,0,0);
     const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate()+1);
 
+    // Monday-start of this week (ISO week), safe for Sundays too
+    const weekStart = new Date(today);
+    const day = weekStart.getDay();
+    weekStart.setDate(weekStart.getDate() + (day === 0 ? -6 : 1 - day));
+
     const employees = await User.find({ role: "employee", isActive: true })
       .select("-password");
 
-    // Add today's visit count to each employee
+    // Add today's / this week's / all-time visit counts to each employee
     const withCounts = await Promise.all(employees.map(async (emp) => {
-      const todayVisits = await Visit.countDocuments({
-        employee: emp._id, createdAt: { $gte: today, $lt: tomorrow }
-      });
-      return { ...emp.toObject(), todayVisits };
+      const [todayVisits, weeklyDone, totalVisits] = await Promise.all([
+        Visit.countDocuments({ employee: emp._id, createdAt: { $gte: today, $lt: tomorrow } }),
+        Visit.countDocuments({ employee: emp._id, createdAt: { $gte: weekStart } }),
+        Visit.countDocuments({ employee: emp._id }),
+      ]);
+      return { ...emp.toObject(), todayVisits, weeklyDone, totalVisits };
     }));
 
     res.json({ employees: withCounts });
@@ -56,6 +67,9 @@ exports.getEmployees = async (req, res) => {
 };
 
 // ── GET EMPLOYEE BY ID (GET /api/admin/employees/:id) ────────
+// CHANGE: now also returns monthlyDone, successRate, and weeklyData
+// (Mon→Sun visit counts for the performance chart) so the admin
+// Employee Detail page can show real numbers instead of dummy ones.
 exports.getEmployeeById = async (req, res) => {
   try {
     const emp = await User.findById(req.params.id).select("-password");
@@ -63,27 +77,58 @@ exports.getEmployeeById = async (req, res) => {
 
     const today = new Date(); today.setHours(0,0,0,0);
     const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate()+1);
-    const weekStart = new Date(today); weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
 
-    const [todayVisits, weeklyDone, totalVisits] = await Promise.all([
+    // Monday-start of this week (ISO week), safe for Sundays too
+    const weekStart = new Date(today);
+    const day = weekStart.getDay();
+    weekStart.setDate(weekStart.getDate() + (day === 0 ? -6 : 1 - day));
+    const weekEnd = new Date(weekStart); weekEnd.setDate(weekEnd.getDate() + 7);
+
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+
+    const [todayVisits, weeklyDone, monthlyDone, totalVisits, completedVisits] = await Promise.all([
       Visit.countDocuments({ employee: emp._id, createdAt: { $gte: today, $lt: tomorrow } }),
       Visit.countDocuments({ employee: emp._id, createdAt: { $gte: weekStart } }),
+      Visit.countDocuments({ employee: emp._id, createdAt: { $gte: monthStart } }),
       Visit.countDocuments({ employee: emp._id }),
+      Visit.countDocuments({ employee: emp._id, status: "Completed" }),
     ]);
+
+    const successRate = totalVisits > 0 ? Math.round((completedVisits / totalVisits) * 100) : 0;
 
     const todayVisitsList = await Visit.find({
       employee: emp._id, createdAt: { $gte: today, $lt: tomorrow }
     }).sort({ createdAt: -1 });
 
-    const followupSummary = await Visit.aggregate([
-      { $match: { employee: emp._id, createdAt: { $gte: weekStart } } },
+    // Visits per day for this week (Mon..Sun), for the bar chart
+    const weekRaw = await Visit.aggregate([
+      { $match: { employee: emp._id, createdAt: { $gte: weekStart, $lt: weekEnd } } },
+      { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } }, count: { $sum: 1 } } },
+    ]);
+    const weekCountByDate = {};
+    weekRaw.forEach(r => { weekCountByDate[r._id] = r.count; });
+    const weeklyData = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(weekStart); d.setDate(d.getDate() + i);
+      const key = d.toISOString().split("T")[0];
+      return weekCountByDate[key] || 0;
+    });
+
+    const followupAgg = await Visit.aggregate([
+      { $match: { employee: emp._id, createdAt: { $gte: weekStart }, "followUp.status": { $ne: null } } },
       { $group: { _id: "$followUp.status", count: { $sum: 1 } } },
     ]);
+    const followupSummary = {};
+    followupAgg.forEach(f => { if (f._id) followupSummary[f._id] = f.count; });
 
     res.json({
       employee: emp,
-      stats: { todayVisits, weeklyDone, weeklyTarget: emp.weeklyTarget, totalVisits },
+      stats: {
+        todayVisits, weeklyDone, weeklyTarget: emp.weeklyTarget,
+        monthlyDone, monthlyTarget: emp.monthlyTarget,
+        totalVisits, successRate,
+      },
       todayVisitsList,
+      weeklyData,
       followupSummary,
     });
   } catch (err) {
@@ -107,9 +152,12 @@ exports.updateTarget = async (req, res) => {
 };
 
 // ── GET ALL VISITS (GET /api/admin/visits) ───────────────────
+// CHANGE: now also accepts startDate + endDate (a date range) so the
+// Reports page can pull a full week or month of visits, not just one day.
+// The original single "date" param still works exactly as before.
 exports.getAllVisits = async (req, res) => {
   try {
-    const { page=1, limit=50, status, fieldType, employeeId, date } = req.query;
+    const { page=1, limit=50, status, fieldType, employeeId, date, startDate, endDate } = req.query;
     const filter = {};
     if (status && status !== "All") filter.status = status;
     if (fieldType && fieldType !== "All") filter.fieldType = fieldType;
@@ -118,6 +166,10 @@ exports.getAllVisits = async (req, res) => {
       const start = new Date(date); start.setHours(0,0,0,0);
       const end   = new Date(date); end.setDate(end.getDate()+1);
       filter.createdAt = { $gte: start, $lt: end };
+    } else if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) { const s = new Date(startDate); s.setHours(0,0,0,0); filter.createdAt.$gte = s; }
+      if (endDate)   { const e = new Date(endDate); e.setHours(0,0,0,0); e.setDate(e.getDate()+1); filter.createdAt.$lt = e; }
     }
 
     const visits = await Visit.find(filter)
@@ -234,6 +286,59 @@ exports.getShops = async (req, res) => {
       { $sort: { totalVisits: -1 } },
     ]);
     res.json({ shops });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ── GET PROFIT & LOSS (GET /api/admin/profit-loss) ───────────
+// PURPOSE: real per-employee P&L for the current month, built from the
+// two real ledger sources an employee logs via PerformanceLedger.jsx in
+// the PWA app (Entry model) —
+//   - salary            : from the employee's own profile
+//   - kgSold             : real total quantity (kg) across all Entry docs
+//                          (type:"sale") logged this month
+//   - collectionAmount   : real ₹ sum of Entry docs (type:"collection")
+//                          logged this month
+// The frontend lets the admin set an assumed "margin per kg" (since
+// per-product margin isn't tracked), but collectionAmount is 100% real
+// money already collected — no assumption needed for that part.
+exports.getProfitLoss = async (req, res) => {
+  try {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [employees, salesAgg, collectionsAgg] = await Promise.all([
+      User.find({ role: "employee", isActive: true }).select("-password"),
+      Entry.aggregate([
+        { $match: { createdAt: { $gte: monthStart }, type: "sale" } },
+        { $group: { _id: "$employee", kgSold: { $sum: "$qty" }, saleEntries: { $sum: 1 } } },
+      ]),
+      Entry.aggregate([
+        { $match: { createdAt: { $gte: monthStart }, type: "collection" } },
+        { $group: { _id: "$employee", totalAmount: { $sum: "$amount" } } },
+      ]),
+    ]);
+
+    const salesMap = {};
+    salesAgg.forEach((s) => { if (s._id) salesMap[s._id.toString()] = { kgSold: s.kgSold || 0, saleEntries: s.saleEntries || 0 }; });
+    const collectionsMap = {};
+    collectionsAgg.forEach((c) => { if (c._id) collectionsMap[c._id.toString()] = c.totalAmount; });
+
+    const data = employees.map((emp) => {
+      const sale = salesMap[emp._id.toString()] || { kgSold: 0, saleEntries: 0 };
+      return {
+        _id: emp._id,
+        name: emp.name,
+        employeeId: emp.employeeId,
+        salary: emp.salary || 0,
+        kgSold: sale.kgSold,
+        saleEntries: sale.saleEntries,
+        collectionAmount: collectionsMap[emp._id.toString()] || 0,
+      };
+    });
+
+    res.json({ employees: data, monthStart: monthStart.toISOString().split("T")[0] });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

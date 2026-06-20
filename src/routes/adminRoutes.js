@@ -18,6 +18,7 @@ router.get("/visits/:id",             protectAdmin, adminController.getAdminVisi
 router.get("/analytics",              protectAdmin, adminController.getAnalytics);
 router.get("/locations/live",         protectAdmin, adminController.getLiveLocations);
 router.get("/shops",                  protectAdmin, adminController.getShops);
+router.get("/profit-loss",            protectAdmin, adminController.getProfitLoss);
 
 router.get("/telecallers",            protectAdmin, adminController.getTelecallers);
 router.post("/telecallers",           protectAdmin, adminController.createTelecaller);
