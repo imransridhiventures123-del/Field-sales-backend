@@ -12,19 +12,26 @@ exports.register = async (req, res) => {
   try {
     const { name, mobile, dob, age, address, aadhaar, pan, salary, password, photo } = req.body;
 
+    if (!name || !mobile || !password)
+      return res.status(400).json({ message: "Name, mobile and password are required" });
+
     // Check if mobile already registered
     const exists = await User.findOne({ mobile });
-    if (exists) return res.status(400).json({ message: "Mobile number already registered" });
+    if (exists) return res.status(400).json({ message: "This mobile number is already registered. Please login instead." });
 
-    // Auto-generate employee ID
-    const employeeId = generateEmployeeId(name, dob);
+    // Auto-generate employee ID — retry up to 5 times on collision
+    let employeeId, attempts = 0;
+    do {
+      employeeId = generateEmployeeId(name, dob);
+      attempts++;
+    } while (attempts < 5 && await User.findOne({ employeeId }));
 
     const user = await User.create({
       name, mobile, dob, age, address, aadhaar, pan,
-      salary: Number(salary),
+      salary: salary ? Number(salary) : 0,
       password,
       employeeId,
-      photo: photo || null, // base64 or Cloudinary URL
+      photo: photo || null,
       role: "employee",
     });
 
@@ -44,6 +51,11 @@ exports.register = async (req, res) => {
       },
     });
   } catch (err) {
+    // MongoDB duplicate key (mobile or employeeId) — return a clean 400 not 500
+    if (err.code === 11000) {
+      const field = Object.keys(err.keyPattern || {})[0] || "field";
+      return res.status(400).json({ message: `${field === "mobile" ? "Mobile number" : "Employee ID"} already exists. Please try again.` });
+    }
     res.status(500).json({ message: err.message });
   }
 };
