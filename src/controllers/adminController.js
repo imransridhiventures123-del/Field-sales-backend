@@ -257,10 +257,34 @@ exports.getAnalytics = async (req, res) => {
 };
 
 // ── LIVE LOCATIONS (GET /api/admin/locations/live) ───────────
+// CHANGE: Auto-expires stale online sessions — employees with no GPS
+// ping in the last 10 minutes are marked offline automatically.
+// Fixes wrong online count from sessions that closed without calling
+// /api/location/offline (app crash, phone off, force-close, etc.).
 exports.getLiveLocations = async (req, res) => {
   try {
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+
+    // Mark stale sessions offline in DB so counts stay accurate
+    const stale = await Location.find({
+      isOnline: true, updatedAt: { $lt: tenMinutesAgo }
+    }).select("employee");
+
+    if (stale.length > 0) {
+      const staleIds = stale.map((l) => l.employee);
+      await Location.updateMany(
+        { employee: { $in: staleIds } },
+        { isOnline: false }
+      );
+      await User.updateMany(
+        { _id: { $in: staleIds } },
+        { isOnline: false, lastSeen: new Date() }
+      );
+    }
+
     const locations = await Location.find({ isOnline: true })
       .populate("employee", "name employeeId mobile photo");
+
     res.json({ locations });
   } catch (err) {
     res.status(500).json({ message: err.message });
