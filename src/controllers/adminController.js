@@ -151,6 +151,43 @@ exports.updateTarget = async (req, res) => {
   }
 };
 
+// ── RESET EMPLOYEE PASSWORD (PUT /api/admin/employees/:id/password) ──
+// Admin sets a new password for the employee. The password is hashed
+// automatically by the User model pre-save hook (bcrypt).
+// Employee can then login with the new password immediately.
+exports.resetEmployeePassword = async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ message: "Password must be at least 6 characters." });
+    }
+    // findById + save so the bcrypt pre-save hook fires
+    const emp = await User.findById(req.params.id).select("+password");
+    if (!emp) return res.status(404).json({ message: "Employee not found." });
+    emp.password = newPassword;
+    await emp.save();
+    res.json({ message: "Password updated successfully." });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ── UPDATE EMPLOYEE PROFILE (PUT /api/admin/employees/:id/profile) ──
+// Admin can update name, mobile, address, salary, aadhaar, pan, dob, age.
+// Does NOT touch password or employeeId.
+exports.updateEmployeeProfile = async (req, res) => {
+  try {
+    const allowed = ["name","mobile","address","salary","aadhaar","pan","dob","age","city","pincode","photo"];
+    const update  = {};
+    allowed.forEach((f) => { if (req.body[f] !== undefined) update[f] = req.body[f]; });
+    const emp = await User.findByIdAndUpdate(req.params.id, update, { new: true }).select("-password");
+    if (!emp) return res.status(404).json({ message: "Employee not found." });
+    res.json({ employee: emp });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 // ── GET ALL VISITS (GET /api/admin/visits) ───────────────────
 // CHANGE: now also accepts startDate + endDate (a date range) so the
 // Reports page can pull a full week or month of visits, not just one day.

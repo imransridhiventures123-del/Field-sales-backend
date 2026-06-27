@@ -7,9 +7,11 @@ router.post("/auth/login",  adminController.adminLogin);
 router.get( "/auth/me",     protectAdmin, adminController.getAdminMe);
 router.get("/seed",        adminController.seedAdmin);
 
-router.get("/employees",              protectAdmin, adminController.getEmployees);
-router.get("/employees/:id",          protectAdmin, adminController.getEmployeeById);
-router.put("/employees/:id/target",   protectAdmin, adminController.updateTarget);
+router.get("/employees",                    protectAdmin, adminController.getEmployees);
+router.get("/employees/:id",               protectAdmin, adminController.getEmployeeById);
+router.put("/employees/:id/target",        protectAdmin, adminController.updateTarget);
+router.put("/employees/:id/password",      protectAdmin, adminController.resetEmployeePassword);
+router.put("/employees/:id/profile",       protectAdmin, adminController.updateEmployeeProfile);
 
 router.get("/visits",                 protectAdmin, adminController.getAllVisits);
 router.get("/visits/followups",       protectAdmin, adminController.getFollowUps);
