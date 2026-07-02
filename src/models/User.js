@@ -29,7 +29,7 @@ const UserSchema = new mongoose.Schema({
   // select: false means password never comes back in queries by default
 
   // Role: "employee" for field staff, "admin" for managers
-  role:       { type: String, enum: ["employee", "admin"], default: "employee" },
+  role:       { type: String, enum: ["employee","driver","admin"], default: "employee" },
 
   // Target set by admin
   dailyTarget:      { type: Number, default: 20   },

@@ -56,6 +56,7 @@ app.use("/api/visits",   require("./routes/visitRoutes"));
 app.use("/api/location", require("./routes/locationRoutes"));
 app.use("/api/admin",    require("./routes/adminRoutes"));
 app.use("/api/entries",  require("./routes/entryRoutes"));
+app.use("/api/driver",   require("./routes/driverRoutes"));
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "OK", message: "Maavu Backend running", time: new Date().toISOString() });
