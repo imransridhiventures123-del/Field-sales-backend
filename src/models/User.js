@@ -32,9 +32,11 @@ const UserSchema = new mongoose.Schema({
   role:       { type: String, enum: ["employee", "admin"], default: "employee" },
 
   // Target set by admin
-  dailyTarget:   { type: Number, default: 20 },
-  weeklyTarget:  { type: Number, default: 100 },
-  monthlyTarget: { type: Number, default: 400 },
+  dailyTarget:      { type: Number, default: 20   },
+  weeklyTarget:     { type: Number, default: 100  },
+  monthlyTarget:    { type: Number, default: 400  },
+  dailyKgTarget:    { type: Number, default: 40   },
+  monthlyKgTarget:  { type: Number, default: 1400 },
 
   // Online/offline tracking
   isOnline:       { type: Boolean, default: false },

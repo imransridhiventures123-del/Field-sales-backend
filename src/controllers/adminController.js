@@ -188,7 +188,96 @@ exports.updateEmployeeProfile = async (req, res) => {
   }
 };
 
-// ── GET ALL VISITS (GET /api/admin/visits) ───────────────────
+// ── EMPLOYEE MONTHLY REPORT (GET /api/admin/employees/:id/monthly-report) ──
+// Returns daily KG sold, visits, orders, collections for a given month.
+// Used by admin to download per-employee monthly PDF report.
+exports.getEmployeeMonthlyReport = async (req, res) => {
+  try {
+    const emp = await User.findById(req.params.id).select("-password");
+    if (!emp) return res.status(404).json({ message: "Employee not found" });
+
+    // Month param: "2026-06" (default = current month)
+    const monthParam = req.query.month || new Date().toISOString().slice(0, 7);
+    const [yr, mo]   = monthParam.split("-").map(Number);
+    const monthStart = new Date(yr, mo - 1, 1);
+    const monthEnd   = new Date(yr, mo, 1);
+
+    // ── 1. All visits this month ──────────────────────────────
+    const visits = await Visit.find({
+      employee:  emp._id,
+      createdAt: { $gte: monthStart, $lt: monthEnd },
+    }).sort({ createdAt: 1 });
+
+    // ── 2. All sale entries this month (KG sold) ──────────────
+    const saleEntries = await Entry.find({
+      employee:  emp._id,
+      type:      "sale",
+      createdAt: { $gte: monthStart, $lt: monthEnd },
+    }).sort({ createdAt: 1 });
+
+    // ── 3. All collection entries this month (₹ received) ─────
+    const collectionEntries = await Entry.find({
+      employee:  emp._id,
+      type:      "collection",
+      createdAt: { $gte: monthStart, $lt: monthEnd },
+    });
+
+    // ── Build daily breakdown ─────────────────────────────────
+    const daysInMonth = new Date(yr, mo, 0).getDate();
+    const dailyMap = {};
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const key = `${yr}-${String(mo).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+      dailyMap[key] = { date: key, kgSold: 0, shopsVisited: 0, ordersConfirmed: 0, collection: 0, shopNames: [] };
+    }
+
+    // Fill visits per day
+    visits.forEach(v => {
+      const key = v.createdAt.toISOString().split("T")[0];
+      if (!dailyMap[key]) return;
+      dailyMap[key].shopsVisited++;
+      if (v.followUp?.status === "order_placed") dailyMap[key].ordersConfirmed++;
+      dailyMap[key].shopNames.push(v.shopName);
+    });
+
+    // Fill KG sold per day
+    saleEntries.forEach(e => {
+      const key = e.createdAt.toISOString().split("T")[0];
+      if (dailyMap[key]) dailyMap[key].kgSold += (e.qty || 0);
+    });
+
+    // Fill collections per day
+    collectionEntries.forEach(e => {
+      const key = e.createdAt.toISOString().split("T")[0];
+      if (dailyMap[key]) dailyMap[key].collection += (e.amount || 0);
+    });
+
+    // ── Totals ────────────────────────────────────────────────
+    const totalKgSold      = saleEntries.reduce((s, e) => s + (e.qty || 0), 0);
+    const totalCollection  = collectionEntries.reduce((s, e) => s + (e.amount || 0), 0);
+    const totalVisits      = visits.length;
+    const totalOrders      = visits.filter(v => v.followUp?.status === "order_placed").length;
+
+    // Daily KG target (from employee profile or default 40 kg)
+    const dailyKgTarget   = emp.dailyKgTarget || 40;
+    const monthlyKgTarget = emp.monthlyKgTarget || 1400;
+
+    res.json({
+      employee:         emp,
+      month:            monthParam,
+      dailyKgTarget,
+      monthlyKgTarget,
+      totalKgSold,
+      totalCollection,
+      totalVisits,
+      totalOrders,
+      achievementPct:   Math.round((totalKgSold / monthlyKgTarget) * 100),
+      daily:            Object.values(dailyMap),
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
 // CHANGE: now also accepts startDate + endDate (a date range) so the
 // Reports page can pull a full week or month of visits, not just one day.
 // The original single "date" param still works exactly as before.

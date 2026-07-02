@@ -8,6 +8,7 @@ router.get( "/auth/me",     protectAdmin, adminController.getAdminMe);
 router.get("/seed",        adminController.seedAdmin);
 
 router.get("/employees",                    protectAdmin, adminController.getEmployees);
+router.get("/employees/:id/monthly-report",  protectAdmin, adminController.getEmployeeMonthlyReport);
 router.get("/employees/:id",               protectAdmin, adminController.getEmployeeById);
 router.put("/employees/:id/target",        protectAdmin, adminController.updateTarget);
 router.put("/employees/:id/password",      protectAdmin, adminController.resetEmployeePassword);
