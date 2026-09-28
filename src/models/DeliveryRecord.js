@@ -29,6 +29,28 @@ const DeliveryRecordSchema = new mongoose.Schema(
     idlyKg: { type: Number, default: 0 },
     dosaKg: { type: Number, default: 0 },
 
+    // NEW (additive) — Feature: admin-managed product catalog (Level 2).
+    // Any other product delivered to this customer, each with a snapshot
+    // of its name, unit and both prices at delivery time (same idea as the
+    // idly/dosa rate snapshots below), so later price edits or deleting the
+    // product never rewrite old amounts or margins.
+    extraItems: {
+      type: [
+        new mongoose.Schema(
+          {
+            productKey: { type: String, required: true },
+            productName: { type: String, trim: true },
+            unit: { type: String, trim: true, default: "kg" },
+            qty: { type: Number, default: 0 },
+            companyRate: { type: Number, default: 0 },
+            customerRate: { type: Number, default: 0 },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
+
     // Snapshot of rates at the moment of delivery (so a later rate change
     // by admin never rewrites the margin history of past deliveries).
     idlyCompanyRate: { type: Number, default: 0 },

@@ -1,39 +1,37 @@
 // FILE: src/models/Product.js
-// NEW FILE — Feature: Distributor real-time workflow (margin tracking).
-// PURPOSE: The two batter types (Idly, Dosa) as a tiny admin-managed
-// catalog, holding two rates per product:
-//   - companyRatePerKg: what the admin/company charges the DISTRIBUTOR
-//   - customerRatePerKg: the default price the distributor charges the
-//     CUSTOMER for that kg
-// margin per kg = customerRatePerKg - companyRatePerKg. This is what
-// lets the PWA and admin dashboard compute "today's margin" / "total
-// margin" without the distributor typing a rate every time. Admin can
-// still edit these rates any time from the new Products page.
-// Standalone collection — doesn't touch Customer, Distributor, or any
-// existing model.
+// UPDATED — Feature: admin-managed product catalog (Level 2).
+// PURPOSE: The catalog of everything a distributor can order for a
+// customer. Before, only two fixed batters (Idly, Dosa) could exist
+// (`key` was locked by an enum). Now the admin can add ANY product —
+// name, description, unit, prices and a picture — and edit or remove it
+// later. Idly and Dosa stay in the catalog as the two "core" products
+// because stock tracking, the approval modal and margin history are
+// built around them (they cannot be deleted, only edited/deactivated).
+//
+// Field names companyRatePerKg / customerRatePerKg are kept EXACTLY as
+// before so nothing that already reads them breaks — for a product whose
+// `unit` is not "kg" they simply mean "per unit" (per packet, per litre,
+// etc.).
 const mongoose = require("mongoose");
 
 const ProductSchema = new mongoose.Schema(
   {
-    // Stable machine key used everywhere in code ("idly" / "dosa") so
-    // existing idlyKg/dosaKg fields elsewhere in the app line up with
-    // this catalog without needing a bigger refactor.
-    key: { type: String, required: true, unique: true, enum: ["idly", "dosa"] },
-    name: { type: String, required: true, trim: true }, // "Idly Batter"
-    unit: { type: String, default: "kg" },
+    // Stable machine key. For new products it is generated from the name
+    // (e.g. "Paneer Pack" -> "paneer-pack") by the controller and never
+    // changes after creation, even if the name is edited later — carts,
+    // requests and deliveries refer to products by this key.
+    key: { type: String, required: true, unique: true, trim: true, lowercase: true },
+    name: { type: String, required: true, trim: true },
+    description: { type: String, trim: true, default: "" },
+    unit: { type: String, trim: true, default: "kg" }, // kg, packet, litre, piece...
 
-    companyRatePerKg: { type: Number, required: true, default: 0 },
-    customerRatePerKg: { type: Number, required: true, default: 0 },
+    companyRatePerKg: { type: Number, required: true, default: 0 },  // what the company charges the distributor, per unit
+    customerRatePerKg: { type: Number, required: true, default: 0 }, // what the distributor charges the customer, per unit
 
-    // NEW (additive) — Feature: e-commerce-style product cart. Shown as
-    // the product's picture on the customer's "product card" in the PWA
-    // (like a shopping site). Admin sets this from the Products page —
-    // it's just a URL/path string, no image is generated or stored by
-    // the backend itself. Leave blank to fall back to a placeholder on
-    // the PWA side.
     imageUrl: { type: String, trim: true, default: "" },
 
     isActive: { type: Boolean, default: true },
+    sortOrder: { type: Number, default: 0 }, // lower shows first on the distributor's product list
   },
   { timestamps: true }
 );

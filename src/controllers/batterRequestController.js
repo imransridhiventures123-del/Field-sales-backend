@@ -11,6 +11,11 @@
 const BatterRequest = require("../models/BatterRequest");
 const Customer = require("../models/Customer");
 const Distributor = require("../models/Distributor");
+const Product = require("../models/Product");
+
+// Idly and Dosa keep their own dedicated fields (idlyKg/dosaKg) — every
+// other catalog product travels in extraItems.
+const CORE_KEYS = ["idly", "dosa"];
 
 function startOfToday() {
   const d = new Date();
@@ -33,11 +38,32 @@ exports.createOrUpdateMyRequest = async (req, res) => {
     let requestedIdlyKg = 0;
     let requestedDosaKg = 0;
     const snapshot = [];
+    const extraTotals = {}; // productKey -> { productKey, productName, unit, qty }
+
+    // Catalog lookup so the name/unit stored on the request come from the
+    // real product (never trusted from the phone), and a product the admin
+    // has since deleted or switched off is rejected with a clear message.
+    const catalog = {};
+    (await Product.find()).forEach((p) => { catalog[p.key] = p; });
 
     for (const row of customerOrders) {
       const idlyKg = Number(row.idlyKg) || 0;
       const dosaKg = Number(row.dosaKg) || 0;
-      if (idlyKg <= 0 && dosaKg <= 0) continue;
+
+      const extraItems = [];
+      for (const it of Array.isArray(row.extraItems) ? row.extraItems : []) {
+        const qty = Number(it.qty) || 0;
+        if (qty <= 0 || CORE_KEYS.includes(it.productKey)) continue;
+        const product = catalog[it.productKey];
+        if (!product || product.isActive === false) {
+          return res.status(400).json({ message: `"${it.productName || it.productKey}" is no longer available. Please remove it from your cart and try again.` });
+        }
+        extraItems.push({ productKey: product.key, productName: product.name, unit: product.unit || "kg", qty });
+        if (!extraTotals[product.key]) extraTotals[product.key] = { productKey: product.key, productName: product.name, unit: product.unit || "kg", qty: 0 };
+        extraTotals[product.key].qty += qty;
+      }
+
+      if (idlyKg <= 0 && dosaKg <= 0 && extraItems.length === 0) continue;
       requestedIdlyKg += idlyKg;
       requestedDosaKg += dosaKg;
 
@@ -46,11 +72,13 @@ exports.createOrUpdateMyRequest = async (req, res) => {
         const c = await Customer.findById(row.customerId).select("shopName");
         shopName = c?.shopName || "";
       }
-      snapshot.push({ customer: row.customerId || undefined, shopName, idlyKg, dosaKg });
+      snapshot.push({ customer: row.customerId || undefined, shopName, idlyKg, dosaKg, extraItems });
     }
 
-    if (requestedIdlyKg <= 0 && requestedDosaKg <= 0) {
-      return res.status(400).json({ message: "Please add at least one customer's kg requirement." });
+    const requestedExtraItems = Object.values(extraTotals);
+
+    if (requestedIdlyKg <= 0 && requestedDosaKg <= 0 && requestedExtraItems.length === 0) {
+      return res.status(400).json({ message: "Please add at least one customer's requirement." });
     }
 
     const today = startOfToday();
@@ -64,6 +92,7 @@ exports.createOrUpdateMyRequest = async (req, res) => {
       request.requestedIdlyKg = requestedIdlyKg;
       request.requestedDosaKg = requestedDosaKg;
       request.customerOrders = snapshot;
+      request.requestedExtraItems = requestedExtraItems;
       // NEW (additive) — only overwrite when provided, so nothing breaks
       // for any older client that doesn't send these fields.
       if (requestedDeliveryDate !== undefined) request.requestedDeliveryDate = requestedDeliveryDate;
@@ -76,6 +105,7 @@ exports.createOrUpdateMyRequest = async (req, res) => {
         requestedIdlyKg,
         requestedDosaKg,
         customerOrders: snapshot,
+        requestedExtraItems,
         requestedDeliveryDate: requestedDeliveryDate || undefined,
         requestedDeliveryTime: requestedDeliveryTime || "",
       });
@@ -130,20 +160,37 @@ exports.getAllRequests = async (req, res) => {
 // delivery time.
 exports.approveRequest = async (req, res) => {
   try {
-    const { approvedIdlyKg, approvedDosaKg, deliveryTime, adminNote } = req.body;
+    const { approvedIdlyKg, approvedDosaKg, approvedExtraItems, deliveryTime, adminNote } = req.body;
     const request = await BatterRequest.findById(req.params.id);
     if (!request) return res.status(404).json({ message: "Request not found." });
 
     const finalIdly = approvedIdlyKg !== undefined ? Number(approvedIdlyKg) : request.requestedIdlyKg;
     const finalDosa = approvedDosaKg !== undefined ? Number(approvedDosaKg) : request.requestedDosaKg;
 
+    // NEW (additive) — other products. Body: approvedExtraItems =
+    // [{ productKey, qty }]. Anything not listed defaults to the full
+    // requested quantity, so an older admin screen that doesn't send this
+    // field simply approves the extras in full.
+    const approvedMap = {};
+    if (Array.isArray(approvedExtraItems)) {
+      approvedExtraItems.forEach((it) => { approvedMap[it.productKey] = Math.max(0, Number(it.qty) || 0); });
+    }
+    const finalExtras = (request.requestedExtraItems || []).map((it) => ({
+      productKey: it.productKey,
+      productName: it.productName,
+      unit: it.unit,
+      qty: approvedMap[it.productKey] !== undefined ? approvedMap[it.productKey] : it.qty,
+    }));
+    const extrasFullyApproved = (request.requestedExtraItems || []).every((it, i) => finalExtras[i].qty >= it.qty);
+
     request.approvedIdlyKg = finalIdly;
     request.approvedDosaKg = finalDosa;
+    request.approvedExtraItems = finalExtras;
     request.deliveryTime = deliveryTime || "";
     request.adminNote = adminNote || "";
     request.respondedAt = new Date();
     request.status =
-      finalIdly >= request.requestedIdlyKg && finalDosa >= request.requestedDosaKg
+      finalIdly >= request.requestedIdlyKg && finalDosa >= request.requestedDosaKg && extrasFullyApproved
         ? "approved"
         : "partially_approved";
     await request.save();
@@ -164,7 +211,7 @@ exports.rejectRequest = async (req, res) => {
     const { adminNote } = req.body;
     const request = await BatterRequest.findByIdAndUpdate(
       req.params.id,
-      { status: "rejected", adminNote: adminNote || "", respondedAt: new Date(), approvedIdlyKg: 0, approvedDosaKg: 0 },
+      { status: "rejected", adminNote: adminNote || "", respondedAt: new Date(), approvedIdlyKg: 0, approvedDosaKg: 0, approvedExtraItems: [] },
       { new: true }
     );
     if (!request) return res.status(404).json({ message: "Request not found." });

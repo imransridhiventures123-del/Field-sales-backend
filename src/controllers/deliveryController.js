@@ -56,8 +56,30 @@ exports.submitDeliveries = async (req, res) => {
       const dosaKg = Number(r.dosaKg) || 0;
       const status = r.status === "skipped" ? "skipped" : "delivered";
 
-      const companyCost = idlyKg * idlyRate.companyRatePerKg + dosaKg * dosaRate.companyRatePerKg;
-      const defaultCharge = idlyKg * idlyRate.customerRatePerKg + dosaKg * dosaRate.customerRatePerKg;
+      // NEW (additive) — other catalog products on this delivery. Prices
+      // are read from the catalog here on the server (not trusted from the
+      // phone) and snapshotted on the record.
+      const extraItems = [];
+      let extraCost = 0;
+      let extraCharge = 0;
+      for (const it of Array.isArray(r.extraItems) ? r.extraItems : []) {
+        const qty = Number(it.qty) || 0;
+        if (qty <= 0 || it.productKey === "idly" || it.productKey === "dosa") continue;
+        const p = rates[it.productKey];
+        const companyRate = p?.companyRatePerKg || 0;
+        const customerRate = p?.customerRatePerKg || 0;
+        extraItems.push({
+          productKey: it.productKey,
+          productName: p?.name || it.productName || it.productKey,
+          unit: p?.unit || it.unit || "kg",
+          qty, companyRate, customerRate,
+        });
+        extraCost += qty * companyRate;
+        extraCharge += qty * customerRate;
+      }
+
+      const companyCost = idlyKg * idlyRate.companyRatePerKg + dosaKg * dosaRate.companyRatePerKg + extraCost;
+      const defaultCharge = idlyKg * idlyRate.customerRatePerKg + dosaKg * dosaRate.customerRatePerKg + extraCharge;
       const amountCharged = r.amountCharged !== undefined ? Number(r.amountCharged) : defaultCharge;
       const margin = amountCharged - companyCost;
 
@@ -80,6 +102,7 @@ exports.submitDeliveries = async (req, res) => {
         batterRequest: batterRequestId || undefined,
         date: new Date(),
         idlyKg, dosaKg,
+        extraItems,
         idlyCompanyRate: idlyRate.companyRatePerKg,
         idlyCustomerRate: idlyRate.customerRatePerKg,
         dosaCompanyRate: dosaRate.companyRatePerKg,

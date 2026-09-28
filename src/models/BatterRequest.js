@@ -7,6 +7,23 @@
 // approves (fully or partially, with a delivery time) or rejects.
 const mongoose = require("mongoose");
 
+// NEW (additive) — Feature: admin-managed product catalog (Level 2).
+// Any product OTHER than Idly/Dosa that a customer ordered. Idly and Dosa
+// keep using idlyKg/dosaKg exactly as before (so every old request, the
+// stock tracking and the approval numbers stay untouched); every other
+// catalog product is recorded here with a snapshot of its name and unit,
+// so the request still reads correctly even if the product is renamed or
+// deleted later.
+const ExtraItemSchema = new mongoose.Schema(
+  {
+    productKey: { type: String, required: true },
+    productName: { type: String, trim: true },
+    unit: { type: String, trim: true, default: "kg" },
+    qty: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
+
 const BatterRequestSchema = new mongoose.Schema(
   {
     distributor: {
@@ -36,8 +53,15 @@ const BatterRequestSchema = new mongoose.Schema(
         shopName: { type: String, trim: true },
         idlyKg: { type: Number, default: 0 },
         dosaKg: { type: Number, default: 0 },
+        // NEW (additive) — this customer's other-product quantities
+        extraItems: { type: [ExtraItemSchema], default: [] },
       },
     ],
+
+    // NEW (additive) — request-level totals of the other (non Idly/Dosa)
+    // products across all customers, and what the admin approved of them.
+    requestedExtraItems: { type: [ExtraItemSchema], default: [] },
+    approvedExtraItems: { type: [ExtraItemSchema], default: [] },
 
     status: {
       type: String,
