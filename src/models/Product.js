@@ -25,6 +25,14 @@ const ProductSchema = new mongoose.Schema(
     companyRatePerKg: { type: Number, required: true, default: 0 },
     customerRatePerKg: { type: Number, required: true, default: 0 },
 
+    // NEW (additive) — Feature: e-commerce-style product cart. Shown as
+    // the product's picture on the customer's "product card" in the PWA
+    // (like a shopping site). Admin sets this from the Products page —
+    // it's just a URL/path string, no image is generated or stored by
+    // the backend itself. Leave blank to fall back to a placeholder on
+    // the PWA side.
+    imageUrl: { type: String, trim: true, default: "" },
+
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }

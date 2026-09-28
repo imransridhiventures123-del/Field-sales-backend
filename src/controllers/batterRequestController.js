@@ -28,7 +28,7 @@ function startOfToday() {
 // the day's request.
 exports.createOrUpdateMyRequest = async (req, res) => {
   try {
-    const { customerOrders = [], carryOverReason, finalIdlyKg, finalDosaKg } = req.body;
+    const { customerOrders = [], requestedDeliveryDate, requestedDeliveryTime } = req.body;
 
     let requestedIdlyKg = 0;
     let requestedDosaKg = 0;
@@ -49,16 +49,6 @@ exports.createOrUpdateMyRequest = async (req, res) => {
       snapshot.push({ customer: row.customerId || undefined, shopName, idlyKg, dosaKg });
     }
 
-    // customerOrders breakdown always reflects the TRUE per-customer need
-    // (kept as-is above, for admin visibility). But the headline
-    // requested totals can be overridden — this is the "send reduced
-    // request" path: if the distributor already has stock and agrees to
-    // only request the shortfall, the PWA sends finalIdlyKg/finalDosaKg
-    // (need − existing stock) instead of the raw customer-order sum.
-    // Not provided → falls back to the sum, exactly as before.
-    if (finalIdlyKg !== undefined) requestedIdlyKg = Math.max(0, Number(finalIdlyKg));
-    if (finalDosaKg !== undefined) requestedDosaKg = Math.max(0, Number(finalDosaKg));
-
     if (requestedIdlyKg <= 0 && requestedDosaKg <= 0) {
       return res.status(400).json({ message: "Please add at least one customer's kg requirement." });
     }
@@ -70,20 +60,14 @@ exports.createOrUpdateMyRequest = async (req, res) => {
       status: "pending",
     });
 
-    // NEW (additive) — snapshot the distributor's current fridge stock at
-    // the moment of this request, and store the reason if they chose to
-    // request the full amount despite already having stock on hand.
-    const stockSnapshot = {
-      idly: req.distributor.currentStockKg?.idly || 0,
-      dosa: req.distributor.currentStockKg?.dosa || 0,
-    };
-
     if (request) {
       request.requestedIdlyKg = requestedIdlyKg;
       request.requestedDosaKg = requestedDosaKg;
       request.customerOrders = snapshot;
-      request.stockAtRequestTime = stockSnapshot;
-      if (carryOverReason !== undefined) request.carryOverReason = carryOverReason;
+      // NEW (additive) — only overwrite when provided, so nothing breaks
+      // for any older client that doesn't send these fields.
+      if (requestedDeliveryDate !== undefined) request.requestedDeliveryDate = requestedDeliveryDate;
+      if (requestedDeliveryTime !== undefined) request.requestedDeliveryTime = requestedDeliveryTime;
       await request.save();
     } else {
       request = await BatterRequest.create({
@@ -92,8 +76,8 @@ exports.createOrUpdateMyRequest = async (req, res) => {
         requestedIdlyKg,
         requestedDosaKg,
         customerOrders: snapshot,
-        stockAtRequestTime: stockSnapshot,
-        carryOverReason: carryOverReason || "",
+        requestedDeliveryDate: requestedDeliveryDate || undefined,
+        requestedDeliveryTime: requestedDeliveryTime || "",
       });
     }
 

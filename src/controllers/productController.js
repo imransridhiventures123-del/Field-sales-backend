@@ -6,8 +6,8 @@
 const Product = require("../models/Product");
 
 const DEFAULTS = [
-  { key: "idly", name: "Idly Batter", companyRatePerKg: 25, customerRatePerKg: 35 },
-  { key: "dosa", name: "Dosa Batter", companyRatePerKg: 30, customerRatePerKg: 40 },
+  { key: "idly", name: "Idly Batter", companyRatePerKg: 25, customerRatePerKg: 35, imageUrl: "/assets/products/idly.jpg" },
+  { key: "dosa", name: "Dosa Batter", companyRatePerKg: 30, customerRatePerKg: 40, imageUrl: "/assets/products/dosa.jpg" },
 ];
 
 // Ensures the two products always exist, self-healing on first read so
@@ -30,11 +30,12 @@ exports.getProducts = async (req, res) => {
 // Body: { name, companyRatePerKg, customerRatePerKg, isActive }
 exports.updateProduct = async (req, res) => {
   try {
-    const { name, companyRatePerKg, customerRatePerKg, isActive } = req.body;
+    const { name, companyRatePerKg, customerRatePerKg, imageUrl, isActive } = req.body;
     const update = {};
     if (name !== undefined) update.name = name;
     if (companyRatePerKg !== undefined) update.companyRatePerKg = Number(companyRatePerKg);
     if (customerRatePerKg !== undefined) update.customerRatePerKg = Number(customerRatePerKg);
+    if (imageUrl !== undefined) update.imageUrl = imageUrl; // NEW (additive)
     if (isActive !== undefined) update.isActive = isActive;
 
     const product = await Product.findOneAndUpdate({ key: req.params.key }, update, { new: true, upsert: false });
