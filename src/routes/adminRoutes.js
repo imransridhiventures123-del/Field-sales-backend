@@ -54,6 +54,7 @@ router.get("/customers",             protectAdmin, customerController.getCustome
 router.get("/customers/:id",         protectAdmin, customerController.getCustomerById);
 router.put("/customers/:id/tag",     protectAdmin, customerController.updateCustomerTag);
 router.put("/customers/:id/whatsapp",protectAdmin, customerController.updateWhatsappGroup);
+router.put("/customers/:id/pricing", protectAdmin, customerController.updateCustomerPricing);
 router.delete("/customers/:id",      protectAdmin, customerController.deleteCustomer);
 
 // ── Feature 3: Sales Reports (kg trend + pie chart data) ──

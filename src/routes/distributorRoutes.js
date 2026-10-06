@@ -14,6 +14,7 @@ router.post("/auth/login", ctrl.distributorLogin);
 router.get("/me", protectDistributor, ctrl.getMyProfile);
 router.get("/my-customers", protectDistributor, ctrl.getMyCustomers);
 router.post("/my-customers", protectDistributor, ctrl.createMyCustomer);
+router.put("/my-customers/:id/pricing", protectDistributor, ctrl.updateMyCustomerPricing);
 
 // ── Admin — Zones (used by "Distributors Map" tab) ──
 router.get("/admin/zones", protectAdmin, ctrl.getZones);

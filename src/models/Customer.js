@@ -49,6 +49,35 @@ const CustomerSchema = new mongoose.Schema({
   // assigns someone from the new "All Distributors" page.
   assignedDistributor: { type: mongoose.Schema.Types.ObjectId, ref: "Distributor" },
 
+  // NEW — Feature: per-customer custom pricing. Ownership rule: whoever
+  // brought this customer into the system controls their pricing —
+  //   - true  -> the DISTRIBUTOR added this customer themselves (PWA
+  //     "Customers" tab -> "+ Add Customer"). Only that distributor may
+  //     set pricing for them; admin can view but not edit.
+  //   - false (default) -> this customer was created the normal way
+  //     (from a Delivery, or by admin) and/or handed to a distributor via
+  //     "Assign Customer" on the admin side. Only admin may set pricing;
+  //     the distributor can view but not edit.
+  addedByDistributor: { type: Boolean, default: false },
+
+  // Per-product price override for THIS customer only. When a product's
+  // key is not listed here, the distributor/admin falls back to that
+  // product's normal Products & Rates price (Product.customerRatePerKg).
+  // This is what makes every customer able to have their own price
+  // instead of everyone silently sharing one catalog price — and it's
+  // exactly what deliveryController.submitDeliveries now reads from
+  // before falling back to the catalog rate, so the Ledger reflects the
+  // real, customer-specific amount.
+  customPricing: {
+    type: [
+      new mongoose.Schema(
+        { productKey: { type: String, required: true }, customerRatePerKg: { type: Number, required: true, min: 0 } },
+        { _id: false }
+      ),
+    ],
+    default: [],
+  },
+
   totalKg:         { type: Number, default: 0 },   // running total across all deliveries
   totalOrders:     { type: Number, default: 0 },
   totalAmount:     { type: Number, default: 0 },

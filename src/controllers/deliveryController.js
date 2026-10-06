@@ -14,6 +14,7 @@
 const DeliveryRecord = require("../models/DeliveryRecord");
 const Distributor = require("../models/Distributor");
 const Product = require("../models/Product");
+const Customer = require("../models/Customer");
 
 function startOfToday() {
   const d = new Date();
@@ -33,6 +34,22 @@ async function getRateMap() {
   return map;
 }
 
+// NEW — Feature: per-customer custom pricing. Given the customerIds on
+// this batch of delivery records, returns { customerId: { productKey: rate } }
+// so submitDeliveries can charge each customer THEIR price for a product,
+// falling back to the catalog price when nothing custom is set.
+async function getCustomerPriceMaps(customerIds) {
+  const ids = [...new Set(customerIds.filter(Boolean).map(String))];
+  if (!ids.length) return {};
+  const customers = await Customer.find({ _id: { $in: ids } }).select("customPricing");
+  const map = {};
+  for (const c of customers) {
+    map[String(c._id)] = {};
+    (c.customPricing || []).forEach((it) => { map[String(c._id)][it.productKey] = it.customerRatePerKg; });
+  }
+  return map;
+}
+
 /* ══════════════════════ DISTRIBUTOR SIDE ══════════════════════ */
 
 // POST /api/deliveries  (protectDistributor)
@@ -46,6 +63,11 @@ exports.submitDeliveries = async (req, res) => {
     const rates = await getRateMap();
     const idlyRate = rates.idly || { companyRatePerKg: 0, customerRatePerKg: 0 };
     const dosaRate = rates.dosa || { companyRatePerKg: 0, customerRatePerKg: 0 };
+    // NEW — Feature: per-customer custom pricing. customPrices[customerId][productKey]
+    // overrides the catalog customerRatePerKg (company cost stays the catalog
+    // rate always — that's what the company charges the distributor, it
+    // doesn't change per shop).
+    const customPrices = await getCustomerPriceMaps(records.map((r) => r.customerId));
 
     let stockIdlyUsed = 0;
     let stockDosaUsed = 0;
@@ -55,6 +77,12 @@ exports.submitDeliveries = async (req, res) => {
       const idlyKg = Number(r.idlyKg) || 0;
       const dosaKg = Number(r.dosaKg) || 0;
       const status = r.status === "skipped" ? "skipped" : "delivered";
+
+      // NEW — this customer's own price for idly/dosa, if the admin/
+      // distributor set one; otherwise the normal catalog rate.
+      const myPrices = customPrices[String(r.customerId)] || {};
+      const idlyCustomerRate = myPrices.idly !== undefined ? myPrices.idly : idlyRate.customerRatePerKg;
+      const dosaCustomerRate = myPrices.dosa !== undefined ? myPrices.dosa : dosaRate.customerRatePerKg;
 
       // NEW (additive) — other catalog products on this delivery. Prices
       // are read from the catalog here on the server (not trusted from the
@@ -67,7 +95,8 @@ exports.submitDeliveries = async (req, res) => {
         if (qty <= 0 || it.productKey === "idly" || it.productKey === "dosa") continue;
         const p = rates[it.productKey];
         const companyRate = p?.companyRatePerKg || 0;
-        const customerRate = p?.customerRatePerKg || 0;
+        // NEW — this customer's own price for this product, if set.
+        const customerRate = myPrices[it.productKey] !== undefined ? myPrices[it.productKey] : (p?.customerRatePerKg || 0);
         extraItems.push({
           productKey: it.productKey,
           productName: p?.name || it.productName || it.productKey,
@@ -79,7 +108,7 @@ exports.submitDeliveries = async (req, res) => {
       }
 
       const companyCost = idlyKg * idlyRate.companyRatePerKg + dosaKg * dosaRate.companyRatePerKg + extraCost;
-      const defaultCharge = idlyKg * idlyRate.customerRatePerKg + dosaKg * dosaRate.customerRatePerKg + extraCharge;
+      const defaultCharge = idlyKg * idlyCustomerRate + dosaKg * dosaCustomerRate + extraCharge;
       const amountCharged = r.amountCharged !== undefined ? Number(r.amountCharged) : defaultCharge;
       const margin = amountCharged - companyCost;
 
@@ -104,9 +133,9 @@ exports.submitDeliveries = async (req, res) => {
         idlyKg, dosaKg,
         extraItems,
         idlyCompanyRate: idlyRate.companyRatePerKg,
-        idlyCustomerRate: idlyRate.customerRatePerKg,
+        idlyCustomerRate: idlyCustomerRate,
         dosaCompanyRate: dosaRate.companyRatePerKg,
-        dosaCustomerRate: dosaRate.customerRatePerKg,
+        dosaCustomerRate: dosaCustomerRate,
         amountCharged, companyCost, margin,
         paymentStatus, amountPaid, creditAmount,
         status,

@@ -254,6 +254,10 @@ exports.createMyCustomer = async (req, res) => {
       phone: phone.trim(),
       address: address || "",
       assignedDistributor: req.distributor._id,
+      // NEW — Feature: per-customer custom pricing (ownership rule). This
+      // customer was added BY the distributor themselves, so only this
+      // distributor may set their pricing later — admin can view only.
+      addedByDistributor: true,
     });
 
     res.status(201).json({ customer });
@@ -261,4 +265,39 @@ exports.createMyCustomer = async (req, res) => {
     if (err.code === 11000) return res.status(400).json({ message: "A customer with this phone number already exists." });
     res.status(500).json({ message: err.message });
   }
+};
+
+// PUT /api/distributors/my-customers/:id/pricing   { items: [{ productKey, customerRatePerKg }] }
+// NEW — Feature: per-customer custom pricing (distributor side). Only
+// works for a customer that (a) is assigned to THIS distributor and
+// (b) was added by a distributor in the first place — a customer the
+// admin assigned can only be priced by admin, per the ownership rule.
+exports.updateMyCustomerPricing = async (req, res) => {
+  try {
+    const { items } = req.body;
+    if (!Array.isArray(items)) return res.status(400).json({ message: "items must be an array of { productKey, customerRatePerKg }." });
+
+    const customer = await Customer.findById(req.params.id);
+    if (!customer) return res.status(404).json({ message: "Customer not found" });
+
+    if (String(customer.assignedDistributor) !== String(req.distributor._id)) {
+      return res.status(403).json({ message: "This customer isn't assigned to you." });
+    }
+    if (!customer.addedByDistributor) {
+      return res.status(403).json({ message: "This customer was assigned by admin — only admin can set pricing for them." });
+    }
+
+    const cleaned = [];
+    for (const it of items) {
+      const rate = Number(it.customerRatePerKg);
+      if (!it.productKey || !Number.isFinite(rate) || rate < 0) {
+        return res.status(400).json({ message: "Each pricing item needs a productKey and a customerRatePerKg of 0 or more." });
+      }
+      cleaned.push({ productKey: it.productKey, customerRatePerKg: rate });
+    }
+
+    customer.customPricing = cleaned;
+    await customer.save();
+    res.json({ customer });
+  } catch (err) { res.status(500).json({ message: err.message }); }
 };
