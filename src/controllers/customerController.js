@@ -192,30 +192,23 @@ exports.deleteCustomer = async (req, res) => {
 };
 
 // PUT /api/admin/customers/:id/pricing   { items: [{ productKey, customerRatePerKg }] }
-// NEW — Feature: per-customer custom pricing (admin side). Blocked for a
-// customer the DISTRIBUTOR added themselves — per the ownership rule,
-// only that distributor may price their own self-added customers.
+// NEW — Feature: per-customer pricing (admin side, used when assigning a
+// customer to a distributor). Replaces this customer's price list; a
+// product left out falls back to its normal catalog price.
 exports.updateCustomerPricing = async (req, res) => {
   try {
     const { items } = req.body;
     if (!Array.isArray(items)) return res.status(400).json({ message: "items must be an array of { productKey, customerRatePerKg }." });
-
-    const customer = await Customer.findById(req.params.id);
-    if (!customer) return res.status(404).json({ message: "Customer not found" });
-
-    if (customer.addedByDistributor) {
-      return res.status(403).json({ message: "This customer was added by their distributor — only the distributor can set pricing for them." });
-    }
-
     const cleaned = [];
     for (const it of items) {
       const rate = Number(it.customerRatePerKg);
       if (!it.productKey || !Number.isFinite(rate) || rate < 0) {
-        return res.status(400).json({ message: "Each pricing item needs a productKey and a customerRatePerKg of 0 or more." });
+        return res.status(400).json({ message: "Each price needs a product and a rate of 0 or more." });
       }
       cleaned.push({ productKey: it.productKey, customerRatePerKg: rate });
     }
-
+    const customer = await Customer.findById(req.params.id);
+    if (!customer) return res.status(404).json({ message: "Customer not found" });
     customer.customPricing = cleaned;
     await customer.save();
     res.json({ customer });

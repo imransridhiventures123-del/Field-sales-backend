@@ -62,11 +62,28 @@ const DeliveryRecordSchema = new mongoose.Schema(
     companyCost: { type: Number, default: 0 },   // idlyKg*idlyCompanyRate + dosaKg*dosaCompanyRate
     margin: { type: Number, default: 0 },        // amountCharged - companyCost
 
-    paymentStatus: { type: String, enum: ["paid", "credit", "partial"], default: "paid" },
+    paymentStatus: { type: String, enum: ["paid", "credit", "partial", "pending"], default: "paid" },
     amountPaid: { type: Number, default: 0 },
     creditAmount: { type: Number, default: 0 },
 
-    status: { type: String, enum: ["delivered", "skipped"], default: "delivered" },
+    // NEW — Feature: Mark Complete payment split (like the driver app's
+    // "mark done"): how much of this delivery was paid in cash, how much
+    // by GPay/UPI, and how much was left on credit. Deliberately NO
+    // default on cashAmount/onlineAmount so old records (which only have
+    // amountPaid) can still be told apart from new ones. amountPaid is
+    // always kept equal to cash + GPay so every existing screen that reads
+    // it keeps working.
+    cashAmount: { type: Number },
+    onlineAmount: { type: Number },
+
+    // NEW — "manual" = distributor tapped "Today's Order" on a customer;
+    // "request" = the customer came from an admin-approved batter request.
+    source: { type: String, enum: ["request", "manual"], default: "request" },
+    orderedAt: { type: Date },
+    deliveredAt: { type: Date },
+
+    // "pending" = order taken (manual order) but not delivered/closed yet.
+    status: { type: String, enum: ["pending", "delivered", "skipped"], default: "delivered" },
     skipReason: { type: String, trim: true, default: "" },
   },
   { timestamps: true }
