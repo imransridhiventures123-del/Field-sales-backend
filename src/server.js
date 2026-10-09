@@ -274,6 +274,20 @@ app.use(
   require("./routes/deliveryRoutes")
 );
 
+// ════════════════════════════════════════════════════════════
+// NEW — Feature: "Request Product" + distributor notifications.
+// Two more brand-new mount points; nothing existing is touched.
+// ════════════════════════════════════════════════════════════
+app.use(
+  "/api/product-requests",
+  require("./routes/productRequestRoutes")
+);
+
+app.use(
+  "/api/notifications",
+  require("./routes/notificationRoutes")
+);
+
 /*
  * ============================================================
  * HEALTH CHECK
