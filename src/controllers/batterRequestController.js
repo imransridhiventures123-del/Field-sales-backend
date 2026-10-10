@@ -12,6 +12,7 @@ const BatterRequest = require("../models/BatterRequest");
 const Customer = require("../models/Customer");
 const Distributor = require("../models/Distributor");
 const Product = require("../models/Product");
+const { createBill } = require("../utils/distributorBilling"); // NEW — distributor bills
 
 // Idly and Dosa keep their own dedicated fields (idlyKg/dosaKg) — every
 // other catalog product travels in extraItems.
@@ -200,6 +201,15 @@ exports.approveRequest = async (req, res) => {
     await Distributor.findByIdAndUpdate(request.distributor, {
       $inc: { "currentStockKg.idly": finalIdly, "currentStockKg.dosa": finalDosa },
     });
+
+    // NEW — generate the distributor's bill for what was approved (company
+    // rate x approved qty). A billing problem never blocks the approval.
+    try {
+      await createBill({
+        distributor: request.distributor, sourceType: "batter_request", sourceId: request._id,
+        items: [{ productKey: "idly", qty: finalIdly }, { productKey: "dosa", qty: finalDosa }, ...finalExtras.map((e) => ({ productKey: e.productKey, qty: e.qty }))],
+      });
+    } catch (e) { console.error("Bill generation failed (batter request):", e.message); }
 
     res.json({ request });
   } catch (err) { res.status(500).json({ message: err.message }); }

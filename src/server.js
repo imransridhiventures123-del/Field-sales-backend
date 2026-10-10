@@ -288,6 +288,12 @@ app.use(
   require("./routes/notificationRoutes")
 );
 
+// NEW — Feature: distributor bills + ledger (what the distributor owes the company)
+app.use(
+  "/api/distributor-bills",
+  require("./routes/distributorBillRoutes")
+);
+
 /*
  * ============================================================
  * HEALTH CHECK
