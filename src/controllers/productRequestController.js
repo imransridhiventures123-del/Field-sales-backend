@@ -12,6 +12,7 @@ const ProductRequest = require("../models/ProductRequest");
 const Notification = require("../models/Notification");
 const Distributor = require("../models/Distributor");
 const Product = require("../models/Product");
+const { createBill } = require("../utils/distributorBilling"); // NEW — distributor bills
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^\d{2}:\d{2}$/;
@@ -154,6 +155,15 @@ exports.approveRequest = async (req, res) => {
       await ProductRequest.findByIdAndUpdate(claimed._id, { $set: { status: "pending", stockApplied: false } });
       throw e;
     }
+
+    // NEW — generate the distributor's bill for what was approved (company
+    // rate x approved qty). A billing problem never blocks the approval.
+    try {
+      await createBill({
+        distributor: claimed.distributor, sourceType: "product_request", sourceId: claimed._id,
+        items: finalItems.map((it) => ({ productKey: it.productKey, qty: it.approvedQty })),
+      });
+    } catch (e) { console.error("Bill generation failed (product request):", e.message); }
 
     const when = `${fmtTime(deliveryTime)} on ${fmtDate(deliveryDate)}`;
     await Notification.create({
