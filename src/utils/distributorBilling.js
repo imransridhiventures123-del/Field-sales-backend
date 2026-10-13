@@ -1,9 +1,17 @@
 // FILE: src/utils/distributorBilling.js
-// NEW FILE — Feature: Distributor bills. Shared helpers used by the two
-// approve functions (batter request / product request) and the ledger
-// controller. Nothing here touches any existing model.
+// Shared helpers for distributor bills (approve functions + ledger controller).
+//
+// MONEY MODEL (all computed from bills + payments, nothing else stored):
+//   totalBilled  = sum of bills
+//   received     = cash/online money received            (goes to "Received")
+//   creditGiven  = sum of "credit" entries               (NOT money — moved onto credit)
+//   creditRepaid = cash/online received with appliesTo "credit"
+//   dueNow       = totalBilled − (received towards bills) − creditGiven      (still to be settled)
+//   credit       = creditGiven − creditRepaid            (credit balance the distributor holds)
+//   pending      = dueNow + credit = totalBilled − received   (total the distributor owes)
 const DistributorBill = require("../models/DistributorBill");
 const DistributorPayment = require("../models/DistributorPayment");
+const Distributor = require("../models/Distributor");
 const Product = require("../models/Product");
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -13,19 +21,37 @@ function billPrefix(d = new Date()) {
   return `DB-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-`;
 }
 
-// Applies ALL payments of a distributor to their bills, oldest bill first,
-// and refreshes every bill's paidAmount + status. Safe to call any number
-// of times (it always recomputes from the payments + bills).
+const isMoney = (p) => p.mode !== "credit";
+const toBills = (p) => isMoney(p) && p.appliesTo !== "credit";
+
+// Splits a list of payments into the numbers above.
+function sumPayments(payments) {
+  const sum = (arr) => round2(arr.reduce((s, p) => s + p.amount, 0));
+  return {
+    moneyToBills: sum(payments.filter(toBills)),
+    creditGiven: sum(payments.filter((p) => p.mode === "credit")),
+    creditRepaid: sum(payments.filter((p) => isMoney(p) && p.appliesTo === "credit")),
+  };
+}
+
+// Applies the payments to the bills, oldest bill first:
+//   1) money received towards bills -> bill.paidAmount
+//   2) credit moves                 -> bill.creditAmount  (the part of the bill that is on credit)
+// Safe to call any number of times (always recomputes).
 async function recalcDistributor(distributorId) {
   const payments = await DistributorPayment.find({ distributor: distributorId });
-  let remaining = round2(payments.reduce((s, p) => s + p.amount, 0));
+  const { moneyToBills, creditGiven } = sumPayments(payments);
+  let money = moneyToBills, credit = creditGiven;
   const bills = await DistributorBill.find({ distributor: distributorId }).sort({ billDate: 1, createdAt: 1 });
   for (const b of bills) {
-    const paid = round2(Math.min(remaining, b.totalAmount));
-    remaining = round2(remaining - paid);
-    const status = paid >= b.totalAmount ? "paid" : paid > 0 ? "partial" : "pending";
-    if (b.paidAmount !== paid || b.status !== status) {
+    const paid = round2(Math.min(money, b.totalAmount));
+    money = round2(money - paid);
+    const onCredit = round2(Math.min(credit, b.totalAmount - paid));
+    credit = round2(credit - onCredit);
+    const status = paid >= b.totalAmount ? "paid" : paid > 0 || onCredit > 0 ? "partial" : "pending";
+    if (b.paidAmount !== paid || b.creditAmount !== onCredit || b.status !== status) {
       b.paidAmount = paid;
+      b.creditAmount = onCredit;
       b.status = status;
       await b.save();
     }
@@ -74,11 +100,29 @@ async function createBill({ distributor, sourceType, sourceId, items }) {
   return await DistributorBill.findById(bill._id);
 }
 
-async function totalsFor(distributorId) {
-  const bills = await DistributorBill.find({ distributor: distributorId });
+// Pure maths: one distributor's numbers from their bills + payments + limit.
+function computeTotals(bills, payments, creditLimit = 0) {
   const totalBilled = round2(bills.reduce((s, b) => s + b.totalAmount, 0));
-  const totalPaid = round2(bills.reduce((s, b) => s + b.paidAmount, 0));
-  return { totalBilled, totalPaid, pending: round2(totalBilled - totalPaid), billCount: bills.length };
+  const { moneyToBills, creditGiven, creditRepaid } = sumPayments(payments);
+  const totalPaid = round2(moneyToBills + creditRepaid);                    // all money received
+  const pending = Math.max(round2(totalBilled - totalPaid), 0);             // total owed
+  const credit = Math.max(round2(creditGiven - creditRepaid), 0);           // credit balance
+  const dueNow = Math.max(round2(totalBilled - moneyToBills - creditGiven), 0);
+  const limit = round2(creditLimit);
+  return {
+    totalBilled, totalPaid, pending, dueNow, credit,
+    creditLimit: limit, creditAvailable: Math.max(round2(limit - credit), 0),
+    billCount: bills.length,
+  };
 }
 
-module.exports = { createBill, recalcDistributor, totalsFor, round2 };
+async function totalsFor(distributorId) {
+  const [bills, payments, dist] = await Promise.all([
+    DistributorBill.find({ distributor: distributorId }),
+    DistributorPayment.find({ distributor: distributorId }),
+    Distributor.findById(distributorId).select("creditLimit"),
+  ]);
+  return computeTotals(bills, payments, dist?.creditLimit || 0);
+}
+
+module.exports = { createBill, recalcDistributor, totalsFor, computeTotals, round2 };

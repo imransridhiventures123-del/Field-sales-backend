@@ -49,6 +49,10 @@ const DistributorSchema = new mongoose.Schema(
       dosa: { type: Number, default: 0 },
     },
 
+    // NEW — max credit (₹) the admin allows this distributor to keep with the company.
+    // 0 = no credit allowed. Changed from the "Distributor Credits" card in the admin dashboard.
+    creditLimit: { type: Number, default: 0, min: 0 },
+
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }
