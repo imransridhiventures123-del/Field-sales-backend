@@ -8,7 +8,12 @@ const DistributorPaymentSchema = new mongoose.Schema(
   {
     distributor: { type: mongoose.Schema.Types.ObjectId, ref: "Distributor", required: true, index: true },
     amount: { type: Number, required: true, min: 0.01 },
-    mode: { type: String, enum: ["cash", "online"], default: "cash" },
+    // "cash" / "online" = money received.
+    // "credit"          = NO money: admin moved this amount of the bill onto the distributor's
+    //                     credit (still owed, but tracked in the credit balance, within creditLimit).
+    mode: { type: String, enum: ["cash", "online", "credit"], default: "cash" },
+    // For cash/online only: "bills" = pays current dues, "credit" = repays the credit balance.
+    appliesTo: { type: String, enum: ["bills", "credit"], default: "bills" },
     note: { type: String, trim: true, default: "" },
     receivedAt: { type: Date, default: Date.now },
   },
