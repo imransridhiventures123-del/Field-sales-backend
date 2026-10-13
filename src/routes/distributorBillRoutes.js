@@ -10,6 +10,7 @@ router.get("/admin/summary", protectAdmin, ctrl.adminSummary);
 router.get("/admin/distributor/:id", protectAdmin, ctrl.adminDistributorLedger);
 router.post("/admin/distributor/:id/payments", protectAdmin, ctrl.adminAddPayment);
 router.delete("/admin/payments/:paymentId", protectAdmin, ctrl.adminDeletePayment);
+router.put("/admin/distributor/:id/credit-limit", protectAdmin, ctrl.adminSetCreditLimit); // NEW — credit limit
 
 // Distributor app
 router.get("/mine/summary", protectDistributor, ctrl.mySummary);

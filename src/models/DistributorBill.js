@@ -34,6 +34,8 @@ const DistributorBillSchema = new mongoose.Schema(
     // Kept up to date by distributorBilling.recalcDistributor() — payments
     // are applied to the oldest unpaid bill first.
     paidAmount: { type: Number, default: 0 },
+    // NEW — part of this bill that was moved to the distributor's credit (not paid in money).
+    creditAmount: { type: Number, default: 0 },
     status: { type: String, enum: ["pending", "partial", "paid"], default: "pending" },
   },
   { timestamps: true }

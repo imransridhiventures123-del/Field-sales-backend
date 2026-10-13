@@ -103,9 +103,9 @@ exports.updateDistributorStock = async (req, res) => {
 
       cash = round2(num(req.body.cashCollected));
       if (bad(cash)) return res.status(400).json({ message: "Cash collected must be a number of 0 or more." });
-      const { pending } = await totalsFor(dist._id);
-      if (cash > round2(pending + billTotal)) {
-        return res.status(400).json({ message: `Cash collected is more than the pending balance (₹${round2(pending + billTotal)}).` });
+      const { dueNow } = await totalsFor(dist._id);   // cash can only pay what is due now (not amounts already on credit)
+      if (cash > round2(dueNow + billTotal)) {
+        return res.status(400).json({ message: `Cash collected is more than what is due (₹${round2(dueNow + billTotal)}).` });
       }
     }
 
