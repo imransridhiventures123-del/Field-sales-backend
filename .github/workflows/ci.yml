@@ -1,0 +1,21 @@
+# FILE: .github/workflows/ci.yml
+# CI — runs on every pull request and on pushes to develop. Never deploys.
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [develop]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Syntax check every source file
+        run: find src scripts -name "*.js" -print0 | xargs -0 -n1 node --check
+      - name: Lambda smoke test (no database needed)
+        run: npm run test:lambda

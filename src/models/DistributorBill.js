@@ -24,7 +24,7 @@ const DistributorBillSchema = new mongoose.Schema(
     billNumber: { type: String, required: true, unique: true },
     distributor: { type: mongoose.Schema.Types.ObjectId, ref: "Distributor", required: true, index: true },
 
-    sourceType: { type: String, enum: ["batter_request", "product_request"], required: true },
+    sourceType: { type: String, enum: ["batter_request", "product_request", "stock_adjustment"], required: true },
     sourceId: { type: mongoose.Schema.Types.ObjectId, required: true },
 
     billDate: { type: Date, default: Date.now },
