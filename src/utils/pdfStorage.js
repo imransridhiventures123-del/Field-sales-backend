@@ -15,7 +15,11 @@
 const fs = require("fs");
 const path = require("path");
 
-const STORAGE_ROOT = path.join(__dirname, "../../storage/invoices");
+// LAMBDA: the deployment folder is read-only on AWS Lambda; only /tmp is writable
+// (and it is temporary). Everywhere else the path is exactly as before.
+const STORAGE_ROOT = process.env.AWS_LAMBDA_FUNCTION_NAME
+  ? "/tmp/storage/invoices"
+  : path.join(__dirname, "../../storage/invoices");
 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });

@@ -27,6 +27,8 @@ router.post("/admin", protectAdmin, ctrl.createDistributor);
 router.get("/admin/:id", protectAdmin, ctrl.getDistributorById);
 router.put("/admin/:id", protectAdmin, ctrl.updateDistributor);
 router.put("/admin/:id/reset-password", protectAdmin, ctrl.resetDistributorPassword);
+// NEW — admin edits fridge stock (an increase also creates a bill + cash payment)
+router.put("/admin/:id/stock", protectAdmin, require("../controllers/adminEditController").updateDistributorStock);
 router.delete("/admin/:id", protectAdmin, ctrl.deleteDistributor);
 
 // ── Admin — assign/unassign a customer to a distributor ──

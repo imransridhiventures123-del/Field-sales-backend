@@ -85,7 +85,9 @@ const cors      = require("cors");
 const morgan    = require("morgan");
 const connectDB = require("./config/db");
 
-connectDB();
+// LAMBDA: on AWS Lambda the DB connection is opened (and cached) by src/lambda.js,
+// so it is skipped here. On Render / local nothing changes.
+if (!process.env.AWS_LAMBDA_FUNCTION_NAME) connectDB();
 
 const app = express();
 
@@ -342,8 +344,14 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  console.log(
-    `🚀 Server running on http://localhost:${PORT}`
-  );
-});
+// LAMBDA: only start a port listener when run directly (`node src/server.js`,
+// i.e. Render / local). When src/lambda.js imports this file it just gets `app`.
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(
+      `🚀 Server running on http://localhost:${PORT}`
+    );
+  });
+}
+
+module.exports = app;
