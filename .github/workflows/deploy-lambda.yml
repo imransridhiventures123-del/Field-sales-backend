@@ -1,0 +1,88 @@
+# FILE: .github/workflows/deploy-lambda.yml
+# CD — every push to `main`:  test -> build Docker image -> push to AWS ECR -> update Lambda.
+# Can also be run by hand: GitHub -> Actions -> "Deploy to AWS Lambda (Docker)" -> Run workflow.
+name: Deploy to AWS Lambda (Docker)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # short-lived AWS credentials via OIDC — no access keys stored in GitHub
+  contents: read
+
+concurrency:
+  group: deploy-lambda
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Syntax check + Lambda smoke test
+        run: |
+          find src scripts -name "*.js" -print0 | xargs -0 -n1 node --check
+          npm run test:lambda
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image to ECR
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64        # Lambda function architecture = x86_64
+          provenance: false             # Lambda cannot read multi-manifest (provenance) images
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Update Lambda to the new image
+        id: update
+        run: |
+          FN="${{ vars.LAMBDA_FUNCTION_NAME }}"
+          IMAGE="${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ github.sha }}"
+          if aws lambda get-function --function-name "$FN" > /dev/null 2>&1; then
+            aws lambda update-function-code --function-name "$FN" --image-uri "$IMAGE" > /dev/null
+            aws lambda wait function-updated --function-name "$FN"
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+            echo "✅ Lambda $FN now runs $IMAGE"
+          else
+            echo "updated=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Image pushed to ECR ($IMAGE) but Lambda function '$FN' does not exist yet. Create it from this image (see docs/LAMBDA_DEPLOYMENT.md step 2), then push again."
+          fi
+
+      - name: Health check the live function
+        if: ${{ steps.update.outputs.updated == 'true' && vars.LAMBDA_URL != '' }}
+        run: |
+          for i in 1 2 3 4 5; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "${{ vars.LAMBDA_URL }}/api/health" || true)
+            echo "attempt $i -> HTTP $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 5
+          done
+          echo "Health check failed"; exit 1

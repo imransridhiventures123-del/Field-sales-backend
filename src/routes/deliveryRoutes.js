@@ -24,5 +24,7 @@ router.get("/admin/summary", protectAdmin, ctrl.getAdminSummary);
 // NEW — today's shops ordered vs delivered, and the ledger
 router.get("/admin/today-status", protectAdmin, ctrl.getAdminTodayStatus);
 router.get("/admin/ledger", protectAdmin, ctrl.getAdminLedger);
+// NEW — admin edits the Cash / GPay / Credit split of a delivered order
+router.put("/admin/:id/payment", protectAdmin, require("../controllers/adminEditController").updateDeliveryPayment);
 
 module.exports = router;
